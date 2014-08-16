@@ -1,0 +1,18 @@
+sudo apt-get update
+sudo modprobe w1-gpio
+sudo modprobe w1-therm
+chmod +x CWU_recyrkulacja/recyrkulacja_cron.py
+chmod +x CO/CO.py
+sudo apt-get install python-setuptools
+sudo easy_install -U RPIO
+crontab -e   
+	* * * * * sudo /home/pi/MM/CWU_recyrkulacja/recyrkulacja_cron.py
+
+sudo apt-get install python-pip
+sudo apt-get install vim
+sudo apt-get install mc
+
+sudo pip install rpyc
+chmod +x counters.py 
+sudo nohup MM/counters/counters.py &
+
