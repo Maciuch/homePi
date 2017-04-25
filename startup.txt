@@ -15,4 +15,3 @@ sudo apt-get install mc
 sudo pip install rpyc
 chmod +x counters.py 
 sudo nohup MM/counters/counters.py &
-
