@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+# -*- coding: utf-8 -*-
 """
 Central Heating (C.O.), Heat Pump 2 CWU Coil & Solar Return Telemetry Script.
 
@@ -57,7 +58,7 @@ def read_temp(device):
         device (str): 1-Wire sensor folder ID.
 
     Returns:
-        float: Measured temperature in °C.
+        float: Measured temperature in deg C.
 
     Raises:
         RuntimeError: If the sensor fails CRC verification after 5 attempts.
