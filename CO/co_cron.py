@@ -1,4 +1,12 @@
 #!/usr/bin/env python
+"""
+Central Heating (C.O.), Heat Pump 2 CWU Coil & Solar Return Telemetry Script.
+
+Runs every minute via cron on the boiler-room Raspberry Pi (192.168.1.246).
+Reads the DS18B20 1-Wire temperature probes on the solar collector return pipe
+and Heat Pump 2 inlet/outlet pipes connected to the CWU coil, and publishes
+their values to Home Assistant via MQTT.
+"""
 
 import fcntl
 import glob
@@ -13,9 +21,9 @@ haauth = {"username": "mqttuser", "password": "asdsa11"}
 base_dir = "/sys/bus/w1/devices/"
 #bufor_gora = "28-000003b81329"
 #bufor_dol  = "28-000003b83a37"
-solar               = "28-000003b7ff50"
-heat_pump_2_inlet   = "28-00000becad1f"
-heat_pump_2_outlet  = "28-00000bec9e52"
+solar               = "28-000003b7ff50"  # Solar collector return pipe sensor
+heat_pump_2_inlet   = "28-00000becad1f"  # Heat Pump 2 return (CWU coil lower port I = 675 mm)
+heat_pump_2_outlet  = "28-00000bec9e52"  # Heat Pump 2 supply (CWU coil upper port K = 1060 mm)
 
 # Water heater 300L sensors (read and published in /home/pi/CWU_recyrkulacja/recyrkulacja_cron.py):
 water_heater_top_n       = "28-00000bedd00d"  # Point N (1340 mm) - Top
@@ -23,13 +31,37 @@ water_heater_upper_mid_j = "28-00000bec9d24"  # Point J (815 mm)  - Upper-Mid
 water_heater_lower_mid_e = "28-00000bed4c93"  # Point E (445 mm)  - Lower-Mid
 water_heater_bottom_c    = "28-00000bedc62e"  # Point C (275 mm)  - Bottom
 
+
 def read_temp_raw(device):
+    """
+    Read raw lines from the Linux 1-Wire sysfs slave file for a DS18B20 sensor.
+
+    Args:
+        device (str): 1-Wire sensor folder ID (e.g. "28-000003b7ff50").
+
+    Returns:
+        list[str]: Two-line raw output from /sys/bus/w1/devices/<device>/w1_slave.
+    """
     device_folder = glob.glob(base_dir + device)[0]
     device_file = device_folder + "/w1_slave"
     with open(device_file, "r") as f:
         return f.readlines()
 
+
 def read_temp(device):
+    """
+    Parse the temperature in degrees Celsius from a DS18B20 1-Wire sensor.
+    Retries up to 5 times if the 1-Wire CRC check ("YES") has not succeeded yet.
+
+    Args:
+        device (str): 1-Wire sensor folder ID.
+
+    Returns:
+        float: Measured temperature in °C.
+
+    Raises:
+        RuntimeError: If the sensor fails CRC verification after 5 attempts.
+    """
     for _ in range(5):
         lines = read_temp_raw(device)
         if lines and lines[0].strip()[-3:] == "YES":
@@ -40,7 +72,12 @@ def read_temp(device):
         time.sleep(0.2)
     raise RuntimeError("Failed to read 1-Wire sensor: " + device)
 
+
 def main():
+    """
+    Acquire the 1-Wire bus lock (/tmp/w1_bus.lock), read the solar return and
+    Heat Pump 2 inlet/outlet DS18B20 temperatures, and publish them to MQTT.
+    """
     b_g = 0
     b_d = 0
     lock_file = open("/tmp/w1_bus.lock", "w")
@@ -71,5 +108,6 @@ def main():
         tls=None,
         protocol=mqtt.MQTTv311,
     )
+
 
 main()

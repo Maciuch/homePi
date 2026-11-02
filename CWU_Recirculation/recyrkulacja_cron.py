@@ -1,4 +1,18 @@
 #!/usr/bin/env python
+"""
+Water Heater (300L TWIN SOLAR) & Recirculation Steering Script.
+
+Runs every minute via cron on the boiler-room Raspberry Pi (192.168.1.246).
+Reads 4 DS18B20 1-Wire temperature sensors along the vertical profile of the
+300L tank, steers the 3 kW backup electric heater (GPIO 22) and external
+recirculation pump (GPIO 25), and publishes telemetry to Home Assistant via MQTT.
+
+DS18B20 1-Wire Water Heater (300L TWIN SOLAR) sensors:
+- N (1340 mm, 84% height - Top):        28-00000bedd00d
+- J (815 mm,  51% height - Upper-Mid):  28-00000bec9d24
+- E (445 mm,  28% height - Lower-Mid):  28-00000bed4c93
+- C (275 mm,  17% height - Bottom):     28-00000bedc62e
+"""
 
 import fcntl
 import json
@@ -9,14 +23,6 @@ import time
 import datetime
 import paho.mqtt.publish as publish
 import paho.mqtt.client as mqtt
-
-"""
-DS18B20 1-Wire Water Heater (300L TWIN SOLAR) sensors:
-- N (1340 mm, 84% height - Top):        28-00000bedd00d
-- J (815 mm,  51% height - Upper-Mid):  28-00000bec9d24
-- E (445 mm,  28% height - Lower-Mid):  28-00000bed4c93
-- C (275 mm,  17% height - Bottom):     28-00000bedc62e
-"""
 
 mqtt_broker_ip = "192.168.1.49"
 mqtt_broker_port = 1883
@@ -33,7 +39,16 @@ pinRec = 25
 pinHeater = 22
 RPIO.setwarnings(False)
 
+
 def load_prev_state():
+    """
+    Load the previous relay states (electric heater and recirculation pump)
+    from a temporary JSON file so hysteresis bands are preserved across
+    1-minute cron invocations.
+
+    Returns:
+        tuple[str, str]: (heater_state, pump_state), each "ON" or "OFF".
+    """
     try:
         if os.path.exists(state_file):
             with open(state_file, "r") as f:
@@ -43,20 +58,53 @@ def load_prev_state():
         pass
     return "OFF", "OFF"
 
+
 def save_state(heater_state, pump_state):
+    """
+    Persist the current relay states ("ON" or "OFF") and timestamp to disk
+    for use by the next cron invocation.
+
+    Args:
+        heater_state (str): Current state of the 3 kW electric heater ("ON" / "OFF").
+        pump_state (str): Current state of the recirculation pump ("ON" / "OFF").
+    """
     try:
         with open(state_file, "w") as f:
             json.dump({"heater": heater_state, "pump": pump_state, "ts": time.time()}, f)
     except Exception:
         pass
 
+
 def read_temp_raw(device):
+    """
+    Read raw lines from the Linux 1-Wire sysfs slave file for a DS18B20 sensor.
+
+    Args:
+        device (str): 1-Wire sensor folder ID (e.g. "28-00000bedd00d").
+
+    Returns:
+        list[str]: Two-line raw output from /sys/bus/w1/devices/<device>/w1_slave.
+    """
     device_folder = glob.glob(base_dir + device)[0]
     device_file = device_folder + "/w1_slave"
     with open(device_file, "r") as f:
         return f.readlines()
 
+
 def read_temp(device):
+    """
+    Parse the temperature in degrees Celsius from a DS18B20 1-Wire sensor.
+    Retries up to 5 times if the 1-Wire CRC check ("YES") has not succeeded yet.
+
+    Args:
+        device (str): 1-Wire sensor folder ID (e.g. "28-00000bedd00d").
+
+    Returns:
+        float: Measured temperature in °C.
+
+    Raises:
+        RuntimeError: If the sensor fails CRC verification after 5 attempts.
+    """
     for _ in range(5):
         lines = read_temp_raw(device)
         if lines and lines[0].strip()[-3:] == "YES":
@@ -67,13 +115,37 @@ def read_temp(device):
         time.sleep(0.2)
     raise RuntimeError("Failed to read 1-Wire sensor: " + device)
 
+
 def is2ndTariff():
+    """
+    Check whether the current local time falls within the cheaper G12 off-peak
+    electricity tariff windows:
+    - Daytime off-peak window: 13:00 to 15:00
+    - Nighttime off-peak window: 22:00 to 06:00
+
+    Returns:
+        bool: True if currently in 2nd (off-peak) tariff, False in 1st (peak) tariff.
+    """
     now = time.localtime()
     return (now.tm_hour >= 13 and now.tm_hour < 15) or (now.tm_hour >= 22 or now.tm_hour < 6)
 
+
 def main():
+    """
+    Main 1-minute control loop:
+    1. Acquires an exclusive lock (/tmp/w1_bus.lock) and reads all 4 water heater
+       DS18B20 sensors (N, J, E, C).
+    2. Evaluates 3 kW electric heater steering (GPIO 22) with priority given to
+       Heat Pump 2 (CWU coil at 675-1060 mm), activating the electric booster
+       only if both upper sensors (N and J) fall below threshold.
+    3. Evaluates external recirculation loop steering (GPIO 25, O -> A) for
+       bottom-up solar heat harvesting or off-peak surplus top heat transfer.
+    4. Updates GPIO outputs, saves hysteresis state, and publishes all sensor
+       readings and states to Home Assistant via MQTT.
+    """
     prev_heater, prev_pump = load_prev_state()
 
+    # Acquire exclusive lock so concurrent cron scripts do not collide on the 1-Wire bus
     lock_file = open("/tmp/w1_bus.lock", "w")
     fcntl.flock(lock_file, fcntl.LOCK_EX)
     try:
@@ -127,6 +199,7 @@ def main():
         else:
             pumpState = prev_pump
 
+    # Drive GPIO relay outputs without resetting pin state during setup
     RPIO.setup(pinHeater, RPIO.OUT, initial=(RPIO.HIGH if heaterState == "ON" else RPIO.LOW))
     RPIO.output(pinHeater, heaterState == "ON")
 
@@ -135,6 +208,7 @@ def main():
 
     save_state(heaterState, pumpState)
 
+    # Publish all temperatures and binary states to Home Assistant MQTT broker
     msgs = [
         {"topic": "homeassistant/number/water_heater_top_n_temp", "payload": t_top_n, "retain": True},
         {"topic": "homeassistant/number/water_heater_upper_mid_j_temp", "payload": t_upper_mid_j, "retain": True},
@@ -157,5 +231,6 @@ def main():
         tls=None,
         protocol=mqtt.MQTTv311,
     )
+
 
 main()

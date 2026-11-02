@@ -1,4 +1,19 @@
 #!/usr/bin/env python
+"""
+Impulse Electricity Meter Daemon (pwrMeters.py).
+
+Runs continuously as a background daemon started from /etc/rc.local.
+Listens for falling-edge GPIO interrupts from 4 impulse electricity meters
+(Orno / DIN-rail counters) and computes instantaneous active power (kW) from
+the time elapsed between consecutive pulses:
+- 1000 imp/kWh meters (Water Heater, Master House, Heat Pump 1):
+    P [kW] = 3600 [s/h] / (1000 [imp/kWh] * delta_t [s]) = 3.6 / delta_t
+- 800 imp/kWh meter (Solar PV):
+    P [kW] = 3600 [s/h] / (800 [imp/kWh] * delta_t [s])  = 4.5 / delta_t
+
+If no pulse is received within the timeout window (60s for loads, 120s for
+solar PV), the daemon publishes 0 kW to reset the sensor in Home Assistant.
+"""
 
 import RPIO
 import glob
@@ -10,10 +25,14 @@ import paho.mqtt.client as mqtt
 mqtt_broker_ip = "192.168.1.49"
 mqtt_broker_port = 1883
 haauth = {"username": "mqttuser", "password": "asdsa11"}
-pinWaterHeater = 14
-pinMasterPower = 15
-pinHeatPump    = 17
-pinSolar       = 7
+
+# BCM GPIO pin assignments for impulse inputs
+pinWaterHeater = 14  # 3 kW Water Heater electric element meter (1000 imp/kWh)
+pinMasterPower = 15  # Main house electricity meter (1000 imp/kWh)
+pinHeatPump    = 17  # Heat Pump 1 electricity meter (1000 imp/kWh)
+pinSolar       = 7   # Solar PV inverter generation meter (800 imp/kWh)
+
+# Timestamps of the most recent pulse on each channel
 p1 = datetime.datetime.now()
 p2 = datetime.datetime.now()
 p3 = datetime.datetime.now()
@@ -21,6 +40,18 @@ p4 = datetime.datetime.now()
 
 
 def gpio_callback(gpio_id, value):
+    """
+    GPIO falling-edge interrupt callback triggered each time an electricity
+    meter emits an impulse.
+
+    Calculates instantaneous power in kW from the inter-pulse interval (delta),
+    filters out spurious contact-bounce spikes above the circuit breaker rating,
+    and publishes the reading to Home Assistant via MQTT.
+
+    Args:
+        gpio_id (int): BCM GPIO pin number that triggered the interrupt.
+        value (int): Pin logic level after the edge (0 for falling edge).
+    """
     global p1, p2, p3, p4
     now = datetime.datetime.now()
     if gpio_id == pinWaterHeater:
@@ -109,6 +140,7 @@ def gpio_callback(gpio_id, value):
 
 
 try:
+    # Register falling-edge interrupt callbacks with internal pull-ups and 1 ms debounce
     RPIO.add_interrupt_callback(14, gpio_callback, edge="falling", threaded_callback=True, pull_up_down=RPIO.PUD_UP, debounce_timeout_ms=1)
     RPIO.add_interrupt_callback(15, gpio_callback, edge="falling", threaded_callback=True, pull_up_down=RPIO.PUD_UP, debounce_timeout_ms=1)
     RPIO.add_interrupt_callback(17, gpio_callback, edge="falling", threaded_callback=True, pull_up_down=RPIO.PUD_UP, debounce_timeout_ms=1)
@@ -116,7 +148,7 @@ try:
 
     RPIO.wait_for_interrupts(threaded=True)
 
-    # Routine to zero output in case of inactivity
+    # Watchdog loop: zero out power readings in MQTT when no pulses arrive within timeout
     while True:
         time.sleep(10)
         now = datetime.datetime.now()
