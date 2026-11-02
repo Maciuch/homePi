@@ -10,9 +10,6 @@ the desired ventilation fan speed gear ("1", "2", or "3").
 """
 
 import RPIO
-import glob
-import time
-import datetime
 import paho.mqtt.client as mqtt
 
 mqtt_broker_ip = "192.168.1.49"

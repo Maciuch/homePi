@@ -12,7 +12,6 @@ their values to Home Assistant via MQTT.
 import fcntl
 import glob
 import time
-import datetime
 import paho.mqtt.publish as publish
 import paho.mqtt.client as mqtt
 
@@ -20,17 +19,10 @@ mqtt_broker_ip = "192.168.1.49"
 mqtt_broker_port = 1883
 haauth = {"username": "mqttuser", "password": "asdsa11"}
 base_dir = "/sys/bus/w1/devices/"
-#bufor_gora = "28-000003b81329"
-#bufor_dol  = "28-000003b83a37"
+
 solar               = "28-000003b7ff50"  # Solar collector return pipe sensor
 heat_pump_2_inlet   = "28-00000becad1f"  # Heat Pump 2 return (CWU coil lower port I = 675 mm)
 heat_pump_2_outlet  = "28-00000bec9e52"  # Heat Pump 2 supply (CWU coil upper port K = 1060 mm)
-
-# Water heater 300L sensors (read and published in /home/pi/CWU_recyrkulacja/recyrkulacja_cron.py):
-water_heater_top_n       = "28-00000bedd00d"  # Point N (1340 mm) - Top
-water_heater_upper_mid_j = "28-00000bec9d24"  # Point J (815 mm)  - Upper-Mid
-water_heater_lower_mid_e = "28-00000bed4c93"  # Point E (445 mm)  - Lower-Mid
-water_heater_bottom_c    = "28-00000bedc62e"  # Point C (275 mm)  - Bottom
 
 
 def read_temp_raw(device):
@@ -79,8 +71,6 @@ def main():
     Acquire the 1-Wire bus lock (/tmp/w1_bus.lock), read the solar return and
     Heat Pump 2 inlet/outlet DS18B20 temperatures, and publish them to MQTT.
     """
-    b_g = 0
-    b_d = 0
     lock_file = open("/tmp/w1_bus.lock", "w")
     fcntl.flock(lock_file, fcntl.LOCK_EX)
     try:
@@ -92,8 +82,6 @@ def main():
         lock_file.close()
 
     msgs = [
-        {"topic": "homeassistant/number/buffer_bottom_temp", "payload": b_d},
-        ("homeassistant/number/buffer_top_temp", b_g, 0, False),
         ("homeassistant/number/solar_temp_powrot", s_t, 0, False),
         ("homeassistant/number/heat_pump_2_inlet_temp", hp2i, 0, False),
         ("homeassistant/number/heat_pump_2_outlet_temp", hp2o, 0, False),

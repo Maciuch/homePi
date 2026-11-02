@@ -21,7 +21,6 @@ import os
 import RPIO
 import glob
 import time
-import datetime
 import paho.mqtt.publish as publish
 import paho.mqtt.client as mqtt
 
@@ -215,9 +214,6 @@ def main():
         {"topic": "homeassistant/number/water_heater_upper_mid_j_temp", "payload": t_upper_mid_j, "retain": True},
         {"topic": "homeassistant/number/water_heater_lower_mid_e_temp", "payload": t_lower_mid_e, "retain": True},
         {"topic": "homeassistant/number/water_heater_bottom_c_temp", "payload": t_bottom_c, "retain": True},
-        # Legacy topics kept for backward compatibility
-        {"topic": "homeassistant/number/water_heater_top_temp", "payload": t_upper_mid_j, "retain": True},
-        {"topic": "homeassistant/number/water_heater_bottom_temp", "payload": t_lower_mid_e, "retain": True},
         {"topic": "homeassistant/binary_sensor/heater_state", "payload": heaterState, "retain": True},
         {"topic": "homeassistant/binary_sensor/hot_water_recirculation", "payload": pumpState, "retain": True},
     ]

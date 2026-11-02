@@ -17,7 +17,6 @@ solar PV), the daemon publishes 0 kW to reset the sensor in Home Assistant.
 """
 
 import RPIO
-import glob
 import time
 import datetime
 import paho.mqtt.publish as publish
