@@ -1,17 +1,20 @@
 sudo apt-get update
 sudo modprobe w1-gpio
 sudo modprobe w1-therm
-chmod +x CWU_recyrkulacja/recyrkulacja_cron.py
-chmod +x CO/CO.py
-sudo apt-get install python-setuptools
+
+sudo apt-get install python-setuptools python-pip vim mc
 sudo easy_install -U RPIO
-crontab -e   
-	* * * * * sudo /home/pi/MM/CWU_recyrkulacja/recyrkulacja_cron.py
+sudo pip install paho-mqtt
 
-sudo apt-get install python-pip
-sudo apt-get install vim
-sudo apt-get install mc
+chmod +x /home/pi/CWU_recyrkulacja/recyrkulacja_cron.py
+chmod +x /home/pi/co_cron.py
+chmod +x /home/pi/pwrMeters.py
+chmod +x /home/pi/Rekuperator/rekuperator.py
 
-sudo pip install rpyc
-chmod +x counters.py 
-sudo nohup MM/counters/counters.py &
+# Crontab (crontab -e):
+* * * * * sudo /home/pi/CWU_recyrkulacja/recyrkulacja_cron.py
+* * * * * sudo /home/pi/co_cron.py
+
+# /etc/rc.local (background daemons):
+sudo nohup /home/pi/Rekuperator/rekuperator.py &
+sudo nohup /home/pi/pwrMeters.py &
